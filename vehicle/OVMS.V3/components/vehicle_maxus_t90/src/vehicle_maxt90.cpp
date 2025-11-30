@@ -20,8 +20,11 @@ OvmsVehicleMaxt90::OvmsVehicleMaxt90()
   // NOTE: adjust Celcius / kWh to match your metric_unit_t enum names
   m_hvac_temp_c =
     MyMetrics.InitFloat("xmt.v.hvac.temp", 10, 0.0f, Celcius, false);
-  m_pack_capacity_kwh =
-    MyMetrics.InitFloat("xmt.b.capacity", 0, 88.5f, kWh, true);
+m_pack_capacity_kwh =
+  MyMetrics.InitFloat("xmt.b.capacity", 0, 88.5f, kWh, true);
+
+// Seed standard usable capacity metric so OVMS can see it:
+StdMetrics.ms_v_bat_capacity->SetValue(m_pack_capacity_kwh->AsFloat(), kWh);
 
   // Define poll list:
   //  - State 0: vehicle off
@@ -184,20 +187,30 @@ void OvmsVehicleMaxt90::IncomingPollReply(const OvmsPoller::poll_job_t& job,
       if (length >= 2) {
         uint16_t raw = u16be(data);
         float soh = raw / 100.0f;
-
+    
         // Filter out bogus default values (0xFFFF, 0x1800 = 61.44%, etc.)
         if (raw == 0xFFFF || raw == 0x1800 || soh <= 50.0f || soh > 150.0f) {
           ESP_LOGW(TAG, "Invalid SOH raw=0x%04x (%.2f %%) ignored", raw, soh);
           break;
         }
-
+    
         if (StdMetrics.ms_v_bat_soh->AsFloat() != soh) {
           StdMetrics.ms_v_bat_soh->SetValue(soh);
           ESP_LOGD(TAG, "SOH: %.2f %%", soh);
+    
+          // 🔋 Update usable battery capacity [kWh] based on SOH:
+          if (m_pack_capacity_kwh) {
+            float usable_kwh = m_pack_capacity_kwh->AsFloat() * (soh / 100.0f);
+            StdMetrics.ms_v_bat_capacity->SetValue(usable_kwh, kWh);
+            ESP_LOGD(TAG,
+                     "Usable battery capacity: %.2f kWh (nom=%.2f, SOH=%.2f %%)",
+                     usable_kwh, m_pack_capacity_kwh->AsFloat(), soh);
+          }
         }
       }
       break;
     }
+
 
     case 0xE004: { // READY bitfield
       if (length >= 2) {
