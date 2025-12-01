@@ -17,19 +17,18 @@ OvmsVehicleMaxt90::OvmsVehicleMaxt90()
 
   // Custom metrics:
   // Prefix "xmt" = Maxus T90 (to match xnl, xmg, etc. in other vehicles)
-  // NOTE: adjust Celcius / kWh to match your metric_unit_t enum names
   m_hvac_temp_c =
     MyMetrics.InitFloat("xmt.v.hvac.temp", 10, 0.0f, Celcius, false);
-m_pack_capacity_kwh =
-  MyMetrics.InitFloat("xmt.b.capacity", 0, 88.5f, kWh, true);
+  m_pack_capacity_kwh =
+    MyMetrics.InitFloat("xmt.b.capacity", 0, 88.5f, kWh, true);
 
-// Seed standard usable capacity metric so OVMS can see it:
-StdMetrics.ms_v_bat_capacity->SetValue(m_pack_capacity_kwh->AsFloat(), kWh);
+  // Seed standard usable capacity metric so OVMS can see the nominal pack:
+  StdMetrics.ms_v_bat_capacity->SetValue(m_pack_capacity_kwh->AsFloat(), kWh);
 
   // Define poll list:
   //  - State 0: vehicle off
   //  - State 1: vehicle on / driving
-  //  - State 2: charging (not used yet, but kept for future)
+  //  - State 2: charging (reserved for future use)
   //
   // Only READY (0xE004) is polled in state 0 to avoid keeping ECUs awake.
   static const OvmsPoller::poll_pid_t maxt90_polls[] = {
@@ -68,6 +67,10 @@ StdMetrics.ms_v_bat_capacity->SetValue(m_pack_capacity_kwh->AsFloat(), kWh);
   PollSetPidList(m_can1, maxt90_polls);
   PollSetState(0);
 
+  // Init cached AC line values
+  m_ac_voltage = 0.0f;
+  m_ac_current = 0.0f;
+
   ESP_LOGI(TAG, "Maxus T90 EV poller configured on CAN1 @ 500 kbps");
 }
 
@@ -77,7 +80,7 @@ OvmsVehicleMaxt90::~OvmsVehicleMaxt90()
 }
 
 // ─────────────────────────────────────────────
-//  Live CAN Frame Handler (Lock + Odometer)
+//  Live CAN Frame Handler (Lock / AC charge / Odometer)
 // ─────────────────────────────────────────────
 void OvmsVehicleMaxt90::IncomingFrameCan1(CAN_frame_t* p_frame)
 {
@@ -112,7 +115,63 @@ void OvmsVehicleMaxt90::IncomingFrameCan1(CAN_frame_t* p_frame)
       break;
     }
 
-    case 0x540: // Odometer (from your trace)
+    case 0x362: // Likely AC line voltage (V * 100)
+    {
+      uint16_t raw = u16be(&d[0]);     // bytes 0–1
+      float v = raw / 100.0f;          // Volts
+
+      // Basic sanity: UK / EU mains range
+      if (v >= 150.0f && v <= 280.0f)
+      {
+        m_ac_voltage = v;
+        StdMetrics.ms_v_charge_voltage->SetValue(v);
+        ESP_LOGD(TAG, "AC line voltage: %.2f V (raw=0x%04x)", v, raw);
+
+        // If we already know current, update power
+        if (m_ac_current > 0.1f)
+        {
+          float p_kw = (m_ac_voltage * m_ac_current) / 1000.0f;
+          StdMetrics.ms_v_charge_power->SetValue(p_kw);
+          ESP_LOGD(TAG, "AC charge power: %.3f kW", p_kw);
+        }
+      }
+      else
+      {
+        ESP_LOGV(TAG, "AC voltage raw=0x%04x (%.2f V) out of range, ignored",
+                 raw, v);
+      }
+      break;
+    }
+
+    case 0x373: // Likely AC line current (A * 100)
+    {
+      uint16_t raw = u16be(&d[0]);     // bytes 0–1
+      float i = raw / 100.0f;          // Amps
+
+      // Basic sanity: single-phase EVSE currents
+      if (i >= 0.1f && i <= 40.0f)
+      {
+        m_ac_current = i;
+        StdMetrics.ms_v_charge_current->SetValue(i);
+        ESP_LOGD(TAG, "AC line current: %.2f A (raw=0x%04x)", i, raw);
+
+        // If we already know voltage, update power
+        if (m_ac_voltage > 10.0f)
+        {
+          float p_kw = (m_ac_voltage * m_ac_current) / 1000.0f;
+          StdMetrics.ms_v_charge_power->SetValue(p_kw);
+          ESP_LOGD(TAG, "AC charge power: %.3f kW", p_kw);
+        }
+      }
+      else
+      {
+        ESP_LOGV(TAG, "AC current raw=0x%04x (%.2f A) out of range, ignored",
+                 raw, i);
+      }
+      break;
+    }
+
+    case 0x540: // Odometer
     {
       // Frame example seen:
       // 540 00 00 00 00 90 f0 02 00
@@ -187,18 +246,18 @@ void OvmsVehicleMaxt90::IncomingPollReply(const OvmsPoller::poll_job_t& job,
       if (length >= 2) {
         uint16_t raw = u16be(data);
         float soh = raw / 100.0f;
-    
+
         // Filter out bogus default values (0xFFFF, 0x1800 = 61.44%, etc.)
         if (raw == 0xFFFF || raw == 0x1800 || soh <= 50.0f || soh > 150.0f) {
           ESP_LOGW(TAG, "Invalid SOH raw=0x%04x (%.2f %%) ignored", raw, soh);
           break;
         }
-    
+
         if (StdMetrics.ms_v_bat_soh->AsFloat() != soh) {
           StdMetrics.ms_v_bat_soh->SetValue(soh);
           ESP_LOGD(TAG, "SOH: %.2f %%", soh);
-    
-          // 🔋 Update usable battery capacity [kWh] based on SOH:
+
+          // Update usable battery capacity [kWh] based on SOH:
           if (m_pack_capacity_kwh) {
             float usable_kwh = m_pack_capacity_kwh->AsFloat() * (soh / 100.0f);
             StdMetrics.ms_v_bat_capacity->SetValue(usable_kwh, kWh);
@@ -210,7 +269,6 @@ void OvmsVehicleMaxt90::IncomingPollReply(const OvmsPoller::poll_job_t& job,
       }
       break;
     }
-
 
     case 0xE004: { // READY bitfield
       if (length >= 2) {
