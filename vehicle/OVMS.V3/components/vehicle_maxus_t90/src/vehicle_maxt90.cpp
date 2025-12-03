@@ -494,33 +494,34 @@ void OvmsVehicleMaxt90::IncomingPollReply(const OvmsPoller::poll_job_t& job,
     // We again filter known bogus values, including a default 7.5 °C
     // seen when the car is off.
     case 0xE025:
-    {
-      if (length >= 2) {
-        uint16_t raw = u16be(data);
-        float ta = raw / 10.0f;
+{
+  if (length >= 2) {
+    uint16_t raw = u16be(data);
+    float ta = raw / 10.0f;
 
-        bool env_on = StdMetrics.ms_v_env_on->AsBool();
-
-        // Known bogus pattern: 7.5 °C when car is off.
-        if (!env_on && raw == 75) {
-          ESP_LOGW(TAG,
-                   "Ambient temp raw=0x%04x (%.1f °C) ignored (car off/default)",
-                   raw, ta);
-          break;
-        }
-
-        // Filter default / error patterns and silly values.
-        if (raw == 0x0200 || raw == 0xFFFF || ta < -50 || ta > 80) {
-          ESP_LOGW(TAG, "Invalid ambient temp raw=0x%04x (%.1f °C) ignored",
-                   raw, ta);
-          break;
-        }
-
-        StdMetrics.ms_v_env_temp->SetValue(ta);
-        ESP_LOGD(TAG, "Ambient temp: %.1f °C", ta);
-      }
+    // Treat 7.5 °C as an invalid default:
+    if (raw == 75) {
+      ESP_LOGW(TAG,
+               "Ambient temp raw=0x%04x (%.1f °C) ignored (default 7.5 °C)",
+               raw, ta);
+      // Optionally:
+      // StdMetrics.ms_v_env_temp->ClearValue();
       break;
     }
+
+    // Filter default / error patterns and silly values.
+    if (raw == 0x0200 || raw == 0xFFFF || ta < -50 || ta > 80) {
+      ESP_LOGW(TAG, "Invalid ambient temp raw=0x%04x (%.1f °C) ignored",
+               raw, ta);
+      break;
+    }
+
+    StdMetrics.ms_v_env_temp->SetValue(ta);
+    ESP_LOGD(TAG, "Ambient temp: %.1f °C", ta);
+  }
+  break;
+}
+
 
     default:
       // Unknown / not yet implemented extended PID.
