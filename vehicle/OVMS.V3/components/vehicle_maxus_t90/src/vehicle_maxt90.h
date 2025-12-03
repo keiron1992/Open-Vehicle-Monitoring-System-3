@@ -36,8 +36,8 @@ private:
   //   - ms_v_charge_voltage
   //   - ms_v_charge_current
   //   - ms_v_charge_power
-  float m_ac_voltage_v = 0.0f;
-  float m_ac_current_a = 0.0f;
+float m_ac_voltage = 0.0f;  // Volts
+float m_ac_current = 0.0f;  // Amps
 
   // ─────────────────────────────────────────────
   //  Helpers
