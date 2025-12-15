@@ -1,8 +1,8 @@
 set(srcs)
 set(include_dirs)
 
-if (CONFIG_OVMS_VEHICLE_MAPLE60S)
-  list(APPEND srcs "src/vehicle_maple_60s.cpp")
+if (CONFIG_OVMS_VEHICLE_FIATEDOBLO)
+  list(APPEND srcs "src/vehicle_fiatedoblo.cpp")
   list(APPEND include_dirs "src")
 endif ()
 
