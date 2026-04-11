@@ -31,6 +31,7 @@
  */
 void OvmsWebServer::HandleCfgAutoInit(PageEntry_t& p, PageContext_t& c)
 {
+  auto lock = MyConfig.Lock();
   std::string error, warn;
   bool init, ext12v, modem, server_v2, server_v3;
   #ifdef CONFIG_OVMS_SC_JAVASCRIPT_DUKTAPE
@@ -80,7 +81,7 @@ void OvmsWebServer::HandleCfgAutoInit(PageEntry_t& p, PageContext_t& c)
         // check for defined client SSIDs:
         OvmsConfigParam* param = MyConfig.CachedParam("wifi.ssid");
         int cnt = 0;
-        for (auto const& kv : param->m_map) {
+        for (auto const& kv : param->m_instances) {
           if (kv.second != "")
             cnt++;
         }
@@ -194,16 +195,16 @@ void OvmsWebServer::HandleCfgAutoInit(PageEntry_t& p, PageContext_t& c)
 
   c.input_select_start("… access point SSID", "wifi_ssid_ap");
   OvmsConfigParam* param = MyConfig.CachedParam("wifi.ap");
-  if (param->m_map.find(wifi_ssid_ap) == param->m_map.end())
+  if (param->m_instances.find(wifi_ssid_ap) == param->m_instances.end())
     c.input_select_option(wifi_ssid_ap.c_str(), wifi_ssid_ap.c_str(), true);
-  for (auto const& kv : param->m_map)
+  for (auto const& kv : param->m_instances)
     c.input_select_option(kv.first.c_str(), kv.first.c_str(), (kv.first == wifi_ssid_ap));
   c.input_select_end();
 
   c.input_select_start("… client mode SSID", "wifi_ssid_client");
   param = MyConfig.CachedParam("wifi.ssid");
   c.input_select_option("Any known SSID (scan mode)", "", wifi_ssid_client.empty());
-  for (auto const& kv : param->m_map)
+  for (auto const& kv : param->m_instances)
     c.input_select_option(kv.first.c_str(), kv.first.c_str(), (kv.first == wifi_ssid_client));
   c.input_select_end();
 
@@ -211,8 +212,12 @@ void OvmsWebServer::HandleCfgAutoInit(PageEntry_t& p, PageContext_t& c)
 
   c.input_select_start("Vehicle type", "vehicle_type");
   c.input_select_option("&mdash;", "", vehicle_type.empty());
+  // sort vehicle options by name:
+  std::map<const char*, const char*, CmpStrCaseOp> vsort;
   for (OvmsVehicleFactory::map_vehicle_t::iterator k=MyVehicleFactory.m_vmap.begin(); k!=MyVehicleFactory.m_vmap.end(); ++k)
-    c.input_select_option(k->second.name, k->first, (vehicle_type == k->first));
+    vsort[k->second.name] = k->first;
+  for (auto &entry : vsort)
+    c.input_select_option(entry.first, entry.second, (vehicle_type == entry.second));
   c.input_select_end();
 
   c.input_select_start("Start OBD2ECU", "obd2ecu");

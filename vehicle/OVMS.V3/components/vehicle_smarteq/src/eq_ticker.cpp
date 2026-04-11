@@ -37,49 +37,46 @@ static const char *TAG = "v-smarteq";
 
 void OvmsVehicleSmartEQ::Ticker1(uint32_t ticker) 
   {
-  if (m_ddt4all_exec >= 1) 
-    { 
+  if (m_ddt4all_exec >= 1)
     --m_ddt4all_exec;
-    }
 
-  HandleCharging();
-  HandleChargeport();
+  if(IsChargingEQ()) 
+    HandleCharging();
   
-  if (StdMetrics.ms_v_env_on->AsBool(false))
+  if(IsOnEQ())
     {
     HandleEnergy();
-    HandleTripcounter();
+    if(StdMetrics.ms_v_env_gear->AsInt(0) != m_gear)
+      StdMetrics.ms_v_env_gear->SetValue(m_gear);
     }
-  
+  }
+
+void OvmsVehicleSmartEQ::Ticker10(uint32_t ticker) 
+  {
   // reactivate door lock warning if the car is parked and unlocked
   if( m_enable_lock_state && 
         m_warning_unlocked &&
-        (StdMetrics.ms_v_door_fl->AsBool()  || 
-          StdMetrics.ms_v_door_fr->AsBool() ||
-          StdMetrics.ms_v_door_rl->AsBool() ||
-          StdMetrics.ms_v_door_rr->AsBool() ||
-          StdMetrics.ms_v_door_trunk->AsBool() ||
-          StdMetrics.ms_v_door_hood->AsBool())) 
+        DoorOpen()) 
     {
     StdMetrics.ms_v_env_parktime->SetValue(0); // reset parking time
     m_warning_unlocked = false;
     }
-  
-  if (ticker % 10 == 0) // Every 10 seconds
-    {
-    if(m_enable_LED_state) 
-      OnlineState();
-    } // end every 10 seconds
+
+  if(IsOnEQ())
+    HandleTripcounter();
+
+  if(m_enable_LED_state) 
+    OnlineState();
   }
 
 void OvmsVehicleSmartEQ::Ticker60(uint32_t ticker) {  
-  if(m_12v_charge && !StdMetrics.ms_v_env_on->AsBool()) 
+  if(m_12v_charge && !IsOnEQ()) 
     Check12vState();
   if(m_enable_lock_state && !m_warning_unlocked && StdMetrics.ms_v_env_parktime->AsInt() > m_park_timeout_secs +10) 
     DoorLockState();
   if(m_enable_door_state && !m_warning_dooropen && StdMetrics.ms_v_env_parktime->AsInt() > m_park_timeout_secs +10) 
     DoorOpenState();
-  if(StdMetrics.ms_v_env_on->AsBool(false)) 
+  if(IsOnEQ()) 
     setTPMSValue();   // update TPMS metrics
 
   #if defined(CONFIG_OVMS_COMP_WIFI) || defined(CONFIG_OVMS_COMP_CELLULAR)
@@ -99,6 +96,23 @@ void OvmsVehicleSmartEQ::Ticker60(uint32_t ticker) {
       MyNotify.NotifyString("info", "xsq.ddt4all", "DDT4ALL session timeout reached");
       }
     }
+  // if HVAC is on, then modify polling to get the DCDC data (reboot prevention)
+  if (IsOnHVACEQ() && IsAwakeEQ() && m_enable_write_caron && !m_can_active)
+    {
+    smartCANmode(true);
+    }
+  // if charging is in progress, then modify polling to get the DCDC/Charging data (reboot prevention)
+  if (!m_poll_on_charge && IsChargingEQ())
+    {
+    mt_bus_awake->SetValue(true);
+    smartChargeStart();
+    }
+  // check 12V charging state for powermgmt system
+  bool charge_12v = StdMetrics.ms_v_bat_12v_voltage->AsFloat(0.0f) > 13.1f ? true : false;
+  if (charge_12v != StdMetrics.ms_v_env_charging12v->AsBool())
+    {
+    StdMetrics.ms_v_env_charging12v->SetValue(charge_12v);
+    }
 
   #ifdef CONFIG_OVMS_COMP_ADC
   if (m_enable_calcADCfactor && m_ADCfactor_recalc) 
@@ -108,8 +122,8 @@ void OvmsVehicleSmartEQ::Ticker60(uint32_t ticker) {
       m_ADCfactor_recalc = false;
       m_ADCfactor_recalc_timer = 4;
       // calculate new ADC factor      
-      float can12V = mt_evc_LV_DCDC_volt->AsFloat(0.0f);
-      if (mt_evc_LV_DCDC_act_req->AsBool(false))
+      float can12V = mt_evc_dcdc->GetElemValue(1);   // DCDC voltage
+      if (StdMetrics.ms_v_env_charging12v->AsBool(false))
         {
         ReCalcADCfactor(can12V, nullptr);  // nullptr = no Log-Output
         ESP_LOGI(TAG, "Auto ADC recalibration started (%.2fV)", can12V);

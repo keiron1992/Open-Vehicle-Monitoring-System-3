@@ -336,6 +336,8 @@ class OvmsVehicle : public InternalRamAllocated
   protected:
     virtual void CalculateRangeSpeed();     // Derive momentary range gain/loss speed in kph
 
+  private:
+    // Only access through Ticker Thread.
     OvmsBatteryMon m_aux_battery_mon;
     bool m_aux_enabled;
 
@@ -567,7 +569,7 @@ class OvmsVehicle : public InternalRamAllocated
       // Signals for vehicle.
 
       void IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length) override;
-      void IncomingPollError(const OvmsPoller::poll_job_t &job, uint16_t code) override;
+      void IncomingPollError(const OvmsPoller::poll_job_t &job, int32_t code) override;
       void IncomingPollTxCallback(const OvmsPoller::poll_job_t &job, bool success) override;
 
       bool Ready() const override;
@@ -582,7 +584,7 @@ class OvmsVehicle : public InternalRamAllocated
 
     // Polling Response
     virtual void IncomingPollReply(const OvmsPoller::poll_job_t &job, uint8_t* data, uint8_t length);
-    virtual void IncomingPollError(const OvmsPoller::poll_job_t &job, uint16_t code);
+    virtual void IncomingPollError(const OvmsPoller::poll_job_t &job, int32_t code);
     virtual void IncomingPollTxCallback(const OvmsPoller::poll_job_t &job, bool success);
 #endif
 

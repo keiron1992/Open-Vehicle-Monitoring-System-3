@@ -189,7 +189,10 @@ static void OvmsServerV2MongooseCallback(struct mg_connection *nc, int ev, void 
         {
         // Successful connection
         ESP_LOGI(TAG, "Connection successful");
-        if (MyOvmsServerV2) MyOvmsServerV2->SendLogin(nc);
+        if (MyOvmsServerV2)
+          {
+          MyOvmsServerV2->SendLogin(nc);
+          }
         }
       else
         {
@@ -197,6 +200,7 @@ static void OvmsServerV2MongooseCallback(struct mg_connection *nc, int ev, void 
         ESP_LOGW(TAG, "Connection failed");
         if (MyOvmsServerV2)
           {
+          MyOvmsServerV2->m_mgconn = NULL;
           MyOvmsServerV2->SetStatus("Error: Connection failed", true, OvmsServerV2::WaitReconnect);
           MyOvmsServerV2->m_connretry = 60;
           }
@@ -207,30 +211,29 @@ static void OvmsServerV2MongooseCallback(struct mg_connection *nc, int ev, void 
       ESP_LOGV(TAG, "OvmsServerV2MongooseCallback(MG_EV_CLOSE)");
       if (MyOvmsServerV2)
         {
+        // The only case of a scheduled disconnect is by "server v2 stop", in which case MyOvmsServerV2 is
+        // alread NULL, so this can only be an unexpected connection drop; check cause:
         if (MyOvmsServerV2->m_state == OvmsServerV2::Authenticating)
           {
           // Auth issue, user needs to fix config:
           MyOvmsServerV2->SetStatus("Authentication error (wrong ID/password)", true, OvmsServerV2::WaitReconnect);
           MyOvmsServerV2->Reconnect(120);
           }
-        else if (MyOvmsServerV2->m_state == OvmsServerV2::Connecting ||
-                 MyOvmsServerV2->m_state == OvmsServerV2::Connected)
-          {
-          // Unscheduled connection drop:
-          MyOvmsServerV2->SetStatus("Connection lost, reconnecting", true, OvmsServerV2::WaitReconnect);
-          MyOvmsServerV2->Reconnect(10);
-          }
         else
           {
-          // Scheduled disconnect:
-          MyOvmsServerV2->SetStatus("Disconnected", false, OvmsServerV2::Disconnected);
+          // Unscheduled connection drop from any other state:
+          MyOvmsServerV2->SetStatus("Connection lost, reconnecting", true, OvmsServerV2::WaitReconnect);
+          MyOvmsServerV2->Reconnect(10);
           }
         }
       break;
     case MG_EV_RECV:
       ESP_LOGV(TAG, "OvmsServerV2MongooseCallback(MG_EV_RECV)");
       if (MyOvmsServerV2)
-        mbuf_remove(&nc->recv_mbuf, MyOvmsServerV2->IncomingData((uint8_t*)nc->recv_mbuf.buf, nc->recv_mbuf.len));
+        {
+        size_t read = MyOvmsServerV2->IncomingData((uint8_t*)nc->recv_mbuf.buf, nc->recv_mbuf.len);
+        mbuf_remove(&nc->recv_mbuf, read);
+        }
       break;
     default:
       break;
@@ -239,7 +242,7 @@ static void OvmsServerV2MongooseCallback(struct mg_connection *nc, int ev, void 
 
 void OvmsServerV2::ProcessServerMsg()
   {
-  m_lastrx_time = esp_log_timestamp();
+  m_lastrx_time = monotonictime;
   std::string line = m_buffer->ReadLine();
 
   if (line.compare(0,7,"MP-S 0 ") == 0)
@@ -322,6 +325,7 @@ void OvmsServerV2::ProcessServerMsg()
     m_pending_notify_data_last = 0;
     m_pending_notify_data_retransmit = 0;
     m_connretry = 0;
+    m_ping_ticker = 0;
 
     StandardMetrics.ms_s_v2_connected->SetValue(true);
     if (m_paranoid)
@@ -758,10 +762,11 @@ void OvmsServerV2::ProcessCommand(const char* payload)
   delete buffer;
   }
 
-bool OvmsServerV2::Transmit(const std::string& message)
+bool OvmsServerV2::Transmit(const std::string& message, TickType_t timeout /*=portMAX_DELAY*/)
   {
-  OvmsMutexLock mg(&m_mgconn_mutex);
-  if (!m_mgconn)
+  auto mglock = MongooseLock(timeout);
+
+  if (!mglock || !m_mgconn)
     return false;
 
   int len = message.length();
@@ -822,7 +827,7 @@ void OvmsServerV2::SetStatus(const char* status, bool fault, State newstate)
   else
     ESP_LOGI(TAG, "Status: %s", status);
   m_status = status;
-  if (newstate != Undefined)
+  if (newstate != Undefined && newstate != m_state)
     {
     m_state = newstate;
     switch (m_state)
@@ -892,8 +897,15 @@ void OvmsServerV2::Connect()
     }
 
   SetStatus("Connecting...", false, Connecting);
-  OvmsMutexLock mg(&m_mgconn_mutex);
+  auto mglock = MongooseLock();
   struct mg_mgr* mgr = MyNetManager.GetMongooseMgr();
+  if (!mgr)
+    {
+    SetStatus("Error: network manager not available", true, WaitReconnect);
+    m_connretry = 20; // Try again in 20 seconds...
+    return;
+    }
+
   struct mg_connect_opts opts;
   const char* err;
   memset(&opts, 0, sizeof(opts));
@@ -921,7 +933,7 @@ void OvmsServerV2::Connect()
 
 void OvmsServerV2::Disconnect()
   {
-  OvmsMutexLock mg(&m_mgconn_mutex);
+  auto mglock = MongooseLock();
   if (m_mgconn)
     {
     m_mgconn->flags |= MG_F_CLOSE_IMMEDIATELY;
@@ -935,7 +947,7 @@ void OvmsServerV2::Disconnect()
 
 void OvmsServerV2::Reconnect(int connretry)
   {
-  OvmsMutexLock mg(&m_mgconn_mutex);
+  auto mglock = MongooseLock();
   if (m_mgconn)
     {
     m_mgconn->flags |= MG_F_CLOSE_IMMEDIATELY;
@@ -964,7 +976,7 @@ size_t OvmsServerV2::IncomingData(uint8_t* data, size_t len)
 
 void OvmsServerV2::SendLogin(struct mg_connection *nc)
   {
-  OvmsMutexLock mg(&m_mgconn_mutex);
+  // Mongoose event handler, mongoose lock already set
 
   SetStatus("Logging in...", false, Authenticating);
 
@@ -1995,7 +2007,9 @@ bool OvmsServerV2::IncomingNotification(OvmsNotifyType* type, OvmsNotifyEntry* e
     buffer
       << "MP-0 PI"
       << mp_encode(entry->GetValue());
-    return Transmit(buffer.str().c_str()); // Mark it as read if we've managed to send it
+    bool txok = Transmit(buffer.str().c_str(), 0);
+    if (!txok) m_pending_notify_info = true;
+    return txok; // Mark it as read if we've managed to send it
     }
   else if (strcmp(type->m_name,"error")==0)
     {
@@ -2009,7 +2023,9 @@ bool OvmsServerV2::IncomingNotification(OvmsNotifyType* type, OvmsNotifyEntry* e
     buffer
       << "MP-0 PE"
       << entry->GetValue(); // no mp_encode; payload structure "<vehicletype>,<errorcode>,<errordata>"
-    return Transmit(buffer.str().c_str()); // Mark it as read if we've managed to send it
+    bool txok = Transmit(buffer.str().c_str(), 0);
+    if (!txok) m_pending_notify_error = true;
+    return txok; // Mark it as read if we've managed to send it
     }
   else if (strcmp(type->m_name,"alert")==0)
     {
@@ -2023,7 +2039,9 @@ bool OvmsServerV2::IncomingNotification(OvmsNotifyType* type, OvmsNotifyEntry* e
     buffer
       << "MP-0 PA"
       << mp_encode(entry->GetValue());
-    return Transmit(buffer.str().c_str()); // Mark it as read if we've managed to send it
+    bool txok = Transmit(buffer.str().c_str(), 0);
+    if (!txok) m_pending_notify_alert = true;
+    return txok; // Mark it as read if we've managed to send it
     }
   else if (strcmp(type->m_name,"data")==0)
     {
@@ -2129,17 +2147,31 @@ void OvmsServerV2::Ticker1(std::string event, void* data)
 
   if (StandardMetrics.ms_s_v2_connected->AsBool())
     {
+    uint32_t now = monotonictime;
+
     // check for issue #241 condition:
-    if (esp_log_timestamp() - m_lastrx_time > MyConfig.GetParamValueInt("server.v2", "timeout.rx", 960) * 1000)
+    int rxtimeout = MyConfig.GetParamValueInt("server.v2", "timeout.rx", 960);
+    if (rxtimeout != 0)
       {
-      ESP_LOGW(TAG, "Detected stale connection (issue #241), restarting network");
-      MyNetManager.RestartNetwork();
-      return;
+      if (rxtimeout < 120) rxtimeout = 120;
+      if (++m_ping_ticker >= rxtimeout - 60)
+        {
+        // send ping:
+        Transmit("MP-0 A");
+        m_ping_ticker = 0;
+        }
+      else if (now >= m_lastrx_time + rxtimeout)
+        {
+        ESP_LOGW(TAG, "Detected stale connection (issue #241), restarting network");
+        SetStatus("Restarting network", false, WaitNetwork);
+        Disconnect();
+        MyNetManager.RestartNetwork();
+        return;
+        }
       }
 
     // Periodic transmission of metrics
     bool caron = StandardMetrics.ms_v_env_on->AsBool();
-    int now = StandardMetrics.ms_m_monotonic->AsInt();
     int next = (m_peers==0) ? m_updatetime_idle : m_updatetime_connected;
     if ((m_lasttx==0)||(now>(m_lasttx+next)))
       {
@@ -2254,12 +2286,12 @@ OvmsServerV2::OvmsServerV2(const char* name)
 
   if (MyOvmsServerV2Reader == 0)
     {
-    MyOvmsServerV2Reader = MyNotify.RegisterReader("ovmsv2", COMMAND_RESULT_NORMAL, std::bind(OvmsServerV2ReaderCallback, _1, _2),
+    MyOvmsServerV2Reader = MyNotify.RegisterReader("ovmsv2", COMMAND_RESULT_VERBOSE, std::bind(OvmsServerV2ReaderCallback, _1, _2),
                                                    true, std::bind(OvmsServerV2ReaderFilterCallback, _1, _2));
     }
   else
     {
-    MyNotify.RegisterReader(MyOvmsServerV2Reader, "ovmsv2", COMMAND_RESULT_NORMAL, std::bind(OvmsServerV2ReaderCallback, _1, _2),
+    MyNotify.RegisterReader(MyOvmsServerV2Reader, "ovmsv2", COMMAND_RESULT_VERBOSE, std::bind(OvmsServerV2ReaderCallback, _1, _2),
                             true, std::bind(OvmsServerV2ReaderFilterCallback, _1, _2));
     }
 

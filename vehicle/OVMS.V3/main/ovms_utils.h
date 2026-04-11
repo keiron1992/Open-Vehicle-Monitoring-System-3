@@ -84,6 +84,22 @@ struct CmpStrOp
     return std::strcmp(a, b) < 0;
     }
   };
+struct CmpStrCaseOp
+  {
+  bool operator()(char const *a, char const *b) const
+    {
+    return strcasecmp(a, b) < 0;
+    }
+  };
+
+// Equality test for two std::map<K,V> with K,V both being BooleanTestible
+// (using std::pair operator==)
+// Source/credit: Sebastian Mach https://stackoverflow.com/a/8473603
+template <typename Map>
+bool map_equal(Map const &lhs, Map const &rhs)
+  {
+  return lhs.size() == rhs.size() && std::equal(lhs.begin(), lhs.end(), rhs.begin());
+  }
 
 // Tolerant boolean string analyzer:
 inline bool strtobool(const std::string& str)
