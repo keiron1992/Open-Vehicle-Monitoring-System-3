@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'recursive'
 
@@ -14,18 +14,17 @@ jobs:
         run: |
           git clone --recursive https://github.com/espressif/esp-idf.git
           cd esp-idf
-          # Using v4.4.6 which is the stable target for modern OVMS builds
           git checkout v4.4.6
           ./install.sh esp32
           
+      # This step might take 10-15 minutes
       - name: Build Maxus T90 Firmware
         run: |
           . ./esp-idf/export.sh
-          # This command looks at your root CMakeLists.txt for the car exclusions
           idf.py -DCMAKE_POLICY_VERSION_MINIMUM=3.5 build
           
       - name: Upload Finished Firmware
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: Maxus-T90-Firmware
           path: build/ovms3.bin
