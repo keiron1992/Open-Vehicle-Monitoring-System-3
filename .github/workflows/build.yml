@@ -1,6 +1,10 @@
 name: Maxus-T90-Build
 on: [push, workflow_dispatch]
 
+env:
+  # This fixes the Node.js 20 deprecation warning
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,18 +13,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+          fetch-depth: 1
 
       - name: Setup ESP-IDF
         run: |
-          git clone --recursive https://github.com/espressif/esp-idf.git
+          # Cloning with --depth 1 is much faster and more reliable on GitHub
+          git clone --recursive --depth 1 --branch v4.4.6 https://github.com/espressif/esp-idf.git
           cd esp-idf
-          git checkout v4.4.6
           ./install.sh esp32
           
-      # This step might take 10-15 minutes
       - name: Build Maxus T90 Firmware
         run: |
           . ./esp-idf/export.sh
+          # This builds the project using your custom CMakeLists.txt
           idf.py -DCMAKE_POLICY_VERSION_MINIMUM=3.5 build
           
       - name: Upload Finished Firmware
