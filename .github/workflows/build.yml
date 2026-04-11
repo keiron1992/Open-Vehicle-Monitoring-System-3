@@ -3,7 +3,6 @@ on: [push, workflow_dispatch]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # This line is the key: it disables the component manager globally
   IDF_COMPONENT_MANAGER: "0"
 
 jobs:
@@ -25,12 +24,14 @@ jobs:
       - name: Build Maxus T90 Firmware
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
-          
-          # Move into the firmware directory
           cd vehicle/OVMS.V3
           
-          # Clean and Build
+          # 1. CRITICAL: Remove any leftover manifest/lock files from previous failed runs
+          find . -name "dependencies.lock" -delete
+          find . -name "managed_components" -type d -exec rm -rf {} +
           rm -rf build
+          
+          # 2. Build with the ignore-dependencies flag
           idf.py build
           
       - name: Upload Finished Firmware
