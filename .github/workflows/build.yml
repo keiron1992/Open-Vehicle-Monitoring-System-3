@@ -23,6 +23,7 @@ jobs:
       - name: Build Maxus T90 Firmware
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
+          rm -rf build
           idf.py -DCMAKE_POLICY_VERSION_MINIMUM=3.5 build
           
       - name: Upload Finished Firmware
