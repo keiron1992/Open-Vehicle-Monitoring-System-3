@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Suppress common warnings that often break builds on GitHub Actions
+# Global compiler settings to prevent minor warnings from stopping the build
 add_compile_options(
     "-w"
     "-Wno-error=format-truncation" 
@@ -11,10 +11,10 @@ add_compile_options(
     "-DCONFIG_OVMS_COMP_CELLULAR_NONE"
 )
 
-set(EXTRA_COMPONENT_DIRS "components")
+# Tell the builder to look in 'main' for the app_main function
+set(EXTRA_COMPONENT_DIRS "components" "main")
 
-# EXCLUDE LIST: Every car from your screenshot except Maxus and OBDII
-# This is what keeps the build under the memory limit and prevents crashes.
+# Exclude list to keep the build fast and avoid memory crashes
 set(EXCLUDE_COMPONENTS 
     "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
     "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
