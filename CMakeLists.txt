@@ -1,20 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Compiler settings to ignore non-critical warnings
-add_compile_options(
-    "-w"
-    "-Wno-error=format-truncation" 
-    "-Wno-error=int-in-bool-context" 
-    "-Wno-error=format-overflow"
-    "-Wno-maybe-uninitialized"
-    "-Wno-error=maybe-uninitialized"
-    "-DCONFIG_OVMS_COMP_CELLULAR_NONE"
-)
+# 1. Setup the project paths (CRITICAL: Must be before 'include')
+set(EXTRA_COMPONENT_DIRS "main" "components")
 
-# Tell the builder to include the 'main' and 'components' folders
-set(EXTRA_COMPONENT_DIRS "components" "main")
-
-# Exclude other cars to save memory
+# 2. Disable heavy car modules to prevent memory/build errors
 set(EXCLUDE_COMPONENTS 
     "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
     "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
@@ -27,5 +16,14 @@ set(EXCLUDE_COMPONENTS
     "vehicle_mgev_th" "vehicle_volkswagen_tp" "vehicle_fiat500e"
 )
 
+# 3. Global compiler flags
+add_compile_options(
+    "-w"
+    "-Wno-error=format-truncation" 
+    "-Wno-maybe-uninitialized"
+    "-DCONFIG_OVMS_COMP_CELLULAR_NONE"
+)
+
+# 4. Include the ESP-IDF project logic
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(ovms3)
