@@ -1,35 +1,31 @@
-name: Maxus-T90-Build
-on: [push, workflow_dispatch]
+cmake_minimum_required(VERSION 3.16)
 
-env:
-  # This fixes the Node.js 20 deprecation warning
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# Global compiler settings for OVMS compatibility
+add_compile_options(
+    "-w"
+    "-Wno-error=format-truncation" 
+    "-Wno-error=int-in-bool-context" 
+    "-Wno-error=format-overflow"
+    "-Wno-maybe-uninitialized"
+    "-Wno-error=maybe-uninitialized"
+    "-DCONFIG_OVMS_COMP_CELLULAR_NONE"
+)
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: 'recursive'
-          fetch-depth: 1
+# Crucial: This tells the builder where the code folders are
+set(EXTRA_COMPONENT_DIRS "components" "main")
 
-      - name: Setup ESP-IDF
-        run: |
-          # Cloning with --depth 1 is much faster and more reliable on GitHub
-          git clone --recursive --depth 1 --branch v4.4.6 https://github.com/espressif/esp-idf.git
-          cd esp-idf
-          ./install.sh esp32
-          
-      - name: Build Maxus T90 Firmware
-        run: |
-          . ./esp-idf/export.sh
-          # This builds the project using your custom CMakeLists.txt
-          idf.py -DCMAKE_POLICY_VERSION_MINIMUM=3.5 build
-          
-      - name: Upload Finished Firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: Maxus-T90-Firmware
-          path: build/ovms3.bin
+# We keep these excluded to save memory and time
+set(EXCLUDE_COMPONENTS 
+    "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
+    "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
+    "vehicle_jaguaripace" "vehicle_kianiroev" "vehicle_kiasoulev" "vehicle_mercedes_b250e"
+    "vehicle_maxus_edeliver3" "vehicle_mgev" "vehicle_trio" "vehicle_nissanleaf"
+    "vehicle_empty" "vehicle_renaulttwizy" "vehicle_renaultzoe" "vehicle_smarted"
+    "vehicle_smarteq" "vehicle_teslamodel3" "vehicle_thinkcity" "vehicle_teslaroadster"
+    "vehicle_teslamodels" "vehicle_toyotarav4ev" "vehicle_voltampera" "vehicle_vweup"
+    "vehicle_track" "vehicle_zeva" "vehicle_hyundai_ioniq5" "vehicle_hyundai_ioniq"
+    "vehicle_mgev_th" "vehicle_volkswagen_tp" "vehicle_fiat500e"
+)
+
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+project(ovms3)
