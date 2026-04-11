@@ -22,11 +22,15 @@ jobs:
 
       - name: Build Maxus T90 Firmware
         run: |
+          # 1. Load the ESP-IDF environment
           . $GITHUB_WORKSPACE/esp-idf/export.sh
-          # Move into the actual firmware project directory
+          
+          # 2. Move into the actual firmware project directory
           cd vehicle/OVMS.V3
+          
+          # 3. Build with Component Manager DISABLED to avoid the v5.0.0 error
           rm -rf build
-          idf.py -DCMAKE_POLICY_VERSION_MINIMUM=3.5 build
+          idf.py -DIDF_COMPONENT_MANAGER=0 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 build
           
       - name: Upload Finished Firmware
         uses: actions/upload-artifact@v4
