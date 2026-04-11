@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-# Compiler settings
+# Compiler settings to ignore non-critical warnings
 add_compile_options(
     "-w"
     "-Wno-error=format-truncation" 
@@ -11,10 +11,10 @@ add_compile_options(
     "-DCONFIG_OVMS_COMP_CELLULAR_NONE"
 )
 
-# Tell the builder where the code is
+# Tell the builder to include the 'main' and 'components' folders
 set(EXTRA_COMPONENT_DIRS "components" "main")
 
-# List of cars to exclude to save space
+# Exclude other cars to save memory
 set(EXCLUDE_COMPONENTS 
     "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
     "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
