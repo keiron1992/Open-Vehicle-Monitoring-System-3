@@ -21,17 +21,19 @@ jobs:
           ./install.sh esp32
           echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
+      - name: Pre-build Patch
+        run: |
+          cd vehicle/OVMS.V3/main
+          # This removes the WHOLE_ARCHIVE requirement which is incompatible with IDF v4.4
+          sed -i 's/WHOLE_ARCHIVE//g' CMakeLists.txt
+          # Clean up any residual lock files
+          find .. -name "dependencies.lock" -delete
+
       - name: Build Maxus T90 Firmware
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
-          
-          # 1. CRITICAL: Remove any leftover manifest/lock files from previous failed runs
-          find . -name "dependencies.lock" -delete
-          find . -name "managed_components" -type d -exec rm -rf {} +
           rm -rf build
-          
-          # 2. Build with the ignore-dependencies flag
           idf.py build
           
       - name: Upload Finished Firmware
