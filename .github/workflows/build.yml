@@ -23,17 +23,27 @@ jobs:
 
       - name: Pre-build Patch
         run: |
-          cd vehicle/OVMS.V3/main
-          # This removes the WHOLE_ARCHIVE requirement which is incompatible with IDF v4.4
-          sed -i 's/WHOLE_ARCHIVE//g' CMakeLists.txt
-          # Clean up any residual lock files
-          find .. -name "dependencies.lock" -delete
+          # Move to the source root
+          cd vehicle/OVMS.V3
+          
+          # 1. Broad Patch: Remove WHOLE_ARCHIVE from EVERY CMakeLists.txt in the tree
+          # This catches cases in main/ and components/ that previous scripts missed.
+          find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
+          
+          # 2. Nuclear Clean: Remove all artifacts that trigger the component manager
+          find . -name "dependencies.lock" -delete
+          find . -name "idf_component.yml" -delete
+          rm -rf managed_components
 
       - name: Build Maxus T90 Firmware
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
+          
+          # Clean build directory to ensure no cached errors
           rm -rf build
+          
+          # Run the build
           idf.py build
           
       - name: Upload Finished Firmware
