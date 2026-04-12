@@ -2,9 +2,10 @@ cmake_minimum_required(VERSION 3.16)
 
 set(EXTRA_COMPONENT_DIRS "main" "components")
 
-# Exclude components causing build failures in v4.4.6
+# CRITICAL: "swcan" and "vehicle_obdii" are REMOVED from this list 
+# because the core system and Maxus T90 depend on them.
 set(EXCLUDE_COMPONENTS 
-    "swcan" "vehicle_byd_atto3" "vehicle_renaultzoe_ph2" "vehicle_vweup" 
+    "vehicle_byd_atto3" "vehicle_renaultzoe_ph2" "vehicle_vweup" 
     "vehicle_vwegolf" "vehicle_niu_gtevo" "vehicle_voltampera"
     "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
     "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
