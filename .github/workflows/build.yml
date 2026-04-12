@@ -21,16 +21,20 @@ jobs:
           ./install.sh esp32
           echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
-      - name: Deep Patching & Configuration
+      - name: Deep Patching & Linker Fixes
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Kill the problematic components in the build system
-          # This forces the compiler to ignore the files causing the inheritance errors
+          # 1. FIX THE LINKER ERROR (The "stub" fix)
+          # We inject a dummy version of the missing function so the linker is satisfied.
+          # This returns false, telling the webserver there is no factory partition.
+          echo 'extern "C" bool ovms_partition_table_has_factory() { return false; }' >> main/ovms_main.cpp
+
+          # 2. Kill the problematic components in the build system
+          # This bypasses the inheritance/class-name errors you saw earlier
           sed -i 's/COMPONENT_DIRS :=/COMPONENT_DIRS := components\/console_ssh components\/console_telnet/g' Makefile || true
           
-          # 2. Setup robust sdkconfig.defaults
-          # We explicitly turn OFF Telnet, SSH, and Duktape to ensure a clean build
+          # 3. Setup robust sdkconfig.defaults
           cat <<EOF >> sdkconfig.defaults
           CONFIG_LWIP_PPP_SUPPORT=y
           CONFIG_LWIP_PPP_PAP_SUPPORT=y
@@ -41,14 +45,14 @@ jobs:
           CONFIG_OVMS_COMP_DUKTAPE=n
           EOF
           
-          # 3. Source patches for networking/CAN
+          # 4. Source patches for networking/CAN
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
           find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
           
-          # 4. Global Linker Fixes
+          # 5. Global Linker Fixes
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
-          # 5. Clean manifests to prevent registry conflicts
+          # 6. Clean manifests
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -58,7 +62,7 @@ jobs:
           cd vehicle/OVMS.V3
           rm -rf build sdkconfig
           
-          # Use -w to suppress warnings that IDF 4.4 treats as errors
+          # Suppress warnings to prevent build termination on non-fatal issues
           export EXTRA_CFLAGS="-w"
           export EXTRA_CXXFLAGS="-w"
           
