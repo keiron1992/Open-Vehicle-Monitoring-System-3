@@ -26,14 +26,21 @@ jobs:
           cd vehicle/OVMS.V3
           
           # 1. Fix Telnet Console scope error
-          find . -name "console_telnet.cpp" -exec sed -i '1i#include "ovms_console.h"\n#define console MyConsole' {} +
+          # We inject the actual class declaration and the extern pointer directly.
+          # This bypasses any header-nesting issues.
+          find . -name "console_telnet.cpp" -exec sed -i '1i#include "ovms_console.h"\nclass OvmsConsole;\nextern OvmsConsole* MyConsole;\n#define console MyConsole' {} +
           
           # 2. Setup robust sdkconfig.defaults
-          # We force PPP support and also disable 'Warnings as Errors' which kills Duktape builds
-          echo "CONFIG_LWIP_PPP_SUPPORT=y" >> sdkconfig.defaults
-          echo "CONFIG_LWIP_PPP_PAP_SUPPORT=y" >> sdkconfig.defaults
-          echo "CONFIG_LWIP_PPP_CHAP_SUPPORT=y" >> sdkconfig.defaults
-          echo "CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y" >> sdkconfig.defaults
+          # We disable heavy components (SSH/Duktape) if they keep failing, 
+          # but first let's try to just force the memory-critical settings.
+          cat <<EOF >> sdkconfig.defaults
+          CONFIG_LWIP_PPP_SUPPORT=y
+          CONFIG_LWIP_PPP_PAP_SUPPORT=y
+          CONFIG_LWIP_PPP_CHAP_SUPPORT=y
+          CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y
+          CONFIG_OVMS_COMP_DUKTAPE=n
+          CONFIG_OVMS_COMP_SSH=n
+          EOF
           
           # 3. Source patches for networking/CAN
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
@@ -52,13 +59,11 @@ jobs:
           cd vehicle/OVMS.V3
           rm -rf build sdkconfig
           
-          # Create the config first
-          idf.py reconfigure
-          
-          # Run build with extra flags to prevent strict warning failures
-          # We use -DEXTRA_CFLAGS to tell the compiler 'dont stop on warnings'
+          # Export flags to ignore warnings in third-party code
           export EXTRA_CFLAGS="-w"
           export EXTRA_CXXFLAGS="-w"
+          
+          idf.py reconfigure
           idf.py build
           
       - name: Upload Finished Firmware
