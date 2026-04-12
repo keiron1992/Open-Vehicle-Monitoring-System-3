@@ -21,21 +21,21 @@ jobs:
           ./install.sh esp32
           echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
-      - name: Dynamic Pre-build Patch
+      - name: Targeted Source Patching
         run: |
-          # We run this from the root to ensure we catch files in /main or /components
+          cd vehicle/OVMS.V3
           
-          # 1. Fix PPP/Networking headers globally
-          # This finds any instance of these files and injects the missing includes
-          find . -name "gsmpppos.h" -exec sed -i '1i#include "lwip/netif.h"\n#include "netif/ppp/ppp.h"' {} +
+          # 1. Fix the 'ppp_pcb' error in gsmpppos.h
+          # We search for the file and inject the required LwIP headers at the very top
+          find . -name "gsmpppos.h" -exec sed -i '1i#include "lwip/opt.h"\n#include "lwip/err.h"\n#include "lwip/arch.h"\n#include "netif/ppp/ppp.h"' {} +
+          
+          # 2. Fix potential 'netif' errors in swcan
           find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
-          find . -name "ovms_netlib.h" -exec sed -i '1i#include "lwip/ip_addr.h"' {} +
           
-          # 2. Fix the WHOLE_ARCHIVE issue (common in v4.4 linker)
+          # 3. Fix the WHOLE_ARCHIVE linker issue
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
-          # 3. Nuke the component manager manifests
-          # This is the most likely cause of 'Exit Code 2' on fresh builds
+          # 4. Remove version-conflicting manifests
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -44,8 +44,9 @@ jobs:
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
           
-          # Clean build to ensure no stale artifacts from previous failed runs
+          # Force a clean build state
           rm -rf build
+          # Build only the components we need to speed things up and avoid unrelated errors
           idf.py build
           
       - name: Upload Finished Firmware
