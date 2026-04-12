@@ -25,8 +25,10 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Inject missing network header into swcan.h to fix the 'netif' error
+          # 1. Fix 'ppp_pcb' and 'netif' errors by injecting headers into the cellular and netlib components
+          sed -i '1i#include "lwip/netif.h"\n#include "netif/ppp/ppp.h"' components/ovms_cellular/src/gsmpppos.h
           sed -i '1i#include "lwip/netif.h"' components/swcan/src/swcan.h
+          sed -i '1i#include "lwip/ip_addr.h"' components/ovms_netlib/src/ovms_netlib.h
           
           # 2. Fix the WHOLE_ARCHIVE issue in all CMake files
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
