@@ -26,6 +26,7 @@ jobs:
           cd vehicle/OVMS.V3
           
           # 1. CREATE THE STUB FILE
+          # This handles missing symbols from excluded components
           cat <<EOF > main/linker_fix.cpp
           #include <string>
           class OvmsWriter;
@@ -45,8 +46,8 @@ jobs:
           EOF
 
           # 2. OVERWRITE TOP-LEVEL CMakeLists.txt
-          # This ensures ONLY the T90 is built and problematic consoles are excluded
-          cat <<EOF > CMakeLists.txt
+          # Using quoted 'EOF' to prevent premature shell expansion of $ variables
+          cat <<'EOF' > CMakeLists.txt
           cmake_minimum_required(VERSION 3.16)
           set(EXTRA_COMPONENT_DIRS "main" "components")
           set(EXCLUDE_COMPONENTS 
@@ -64,19 +65,16 @@ jobs:
               "vehicle_vweup_obd" "vehicle_mitsubishi"
               "console_ssh" "console_telnet")
           add_compile_options("-w" "-Wno-error=format-overflow" "-Wno-error=format-truncation" "-Wno-maybe-uninitialized")
-          include(\$ENV{IDF_PATH}/tools/cmake/project.cmake)
+          include($ENV{IDF_PATH}/tools/cmake/project.cmake)
           project(ovms3)
           EOF
 
-          # 3. REWRITE MAIN CMakeLists.txt (Including our linker fix)
-          cat <<EOF > main/CMakeLists.txt
-          set(srcs
-              "ovms_main.cpp" "ovms_command.cpp" "ovms_config.cpp" "ovms_events.cpp"
-              "ovms_housekeeping.cpp" "ovms_metrics.cpp" "ovms_module.cpp"
-              "ovms_netmanager.cpp" "ovms_notify.cpp" "ovms_peripherals.cpp"
-              "ovms_script.cpp" "ovms_server.cpp" "ovms_server_v2.cpp"
-              "ovms_server_v3.cpp" "ovms_shell.cpp" "ovms_utils.cpp" "linker_fix.cpp")
-          idf_component_register(SRCS \${srcs} INCLUDE_DIRS "." LDFRAGMENTS "linker.lf")
+          # 3. REWRITE MAIN CMakeLists.txt
+          # Using file(GLOB ...) to automatically find existing .cpp files 
+          # This fixes the "Cannot find source file" error
+          cat <<'EOF' > main/CMakeLists.txt
+          file(GLOB srcs *.cpp *.c)
+          idf_component_register(SRCS ${srcs} INCLUDE_DIRS "." LDFRAGMENTS "linker.lf")
           EOF
 
           # 4. Setup sdkconfig.defaults
@@ -90,7 +88,7 @@ jobs:
           CONFIG_OVMS_COMP_DUKTAPE=n
           EOF
 
-          # 5. Final Source Patches
+          # 5. Final Source Patches & Cleanups
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
           find . -name "CMakeLists.txt" -not -path "./CMakeLists.txt" -not -path "./main/CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           find . -name "dependencies.lock" -delete
