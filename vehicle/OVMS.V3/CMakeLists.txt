@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.16)
 # 1. Register directories
 set(EXTRA_COMPONENT_DIRS "main" "components")
 
-# 2. Exclude nearly everything EXCEPT Maxus T90 and core features
-# This avoids the Renault/Niu errors and saves massive amounts of Flash memory
+# 2. Exclude only the cars causing build errors or bloat.
+# CRITICAL: We REMOVED "vehicle_obdii" from this list because Maxus T90 needs it!
 set(EXCLUDE_COMPONENTS 
     "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
     "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
@@ -16,10 +16,10 @@ set(EXCLUDE_COMPONENTS
     "vehicle_vwegolf" "vehicle_track" "vehicle_zeva" "vehicle_hyundai_ioniq5" 
     "vehicle_hyundai_ioniq" "vehicle_mgev_th" "vehicle_volkswagen_tp" "vehicle_fiat500e"
     "vehicle_renault_obd" "vehicle_vweup_obd" "vehicle_renaultzoe_ph2" "vehicle_niu_gtevo"
-    "vehicle_obdii" "vehicle_vwegolf" "vehicle_mitsubishi"
+    "vehicle_mitsubishi"
 )
 
-# 3. Suppress non-critical warnings that stop the build
+# 3. Suppress non-critical warnings
 add_compile_options(
     "-w"
     "-Wno-error=format-overflow"
