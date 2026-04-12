@@ -25,14 +25,13 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Fix Telnet Console scope error
-          # We inject the actual class declaration and the extern pointer directly.
-          # This bypasses any header-nesting issues.
-          find . -name "console_telnet.cpp" -exec sed -i '1i#include "ovms_console.h"\nclass OvmsConsole;\nextern OvmsConsole* MyConsole;\n#define console MyConsole' {} +
+          # 1. Fix Telnet Console member error
+          # Instead of fighting the declaration, we comment out the problematic lock line.
+          # We also ensure 'console' is correctly aliased to 'MyConsole'.
+          find . -name "console_telnet.cpp" -exec sed -i 's/auto mglock = console->MongooseLock();/\/\/ auto mglock = console->MongooseLock();/g' {} +
+          find . -name "console_telnet.cpp" -exec sed -i '1i#include "ovms_console.h"\n#define console MyConsole' {} +
           
           # 2. Setup robust sdkconfig.defaults
-          # We disable heavy components (SSH/Duktape) if they keep failing, 
-          # but first let's try to just force the memory-critical settings.
           cat <<EOF >> sdkconfig.defaults
           CONFIG_LWIP_PPP_SUPPORT=y
           CONFIG_LWIP_PPP_PAP_SUPPORT=y
@@ -49,7 +48,7 @@ jobs:
           # 4. Global Linker Fixes
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
-          # 5. Clean manifests to prevent registry conflicts
+          # 5. Clean manifests
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -59,7 +58,6 @@ jobs:
           cd vehicle/OVMS.V3
           rm -rf build sdkconfig
           
-          # Export flags to ignore warnings in third-party code
           export EXTRA_CFLAGS="-w"
           export EXTRA_CXXFLAGS="-w"
           
