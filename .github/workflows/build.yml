@@ -25,7 +25,7 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. CREATE THE STUB FILE IN THE MAIN DIRECTORY
+          # 1. CREATE THE STUB FILE
           cat <<EOF > main/linker_fix.cpp
           #include <string>
           class OvmsWriter;
@@ -40,21 +40,40 @@ jobs:
             
             // BackgroundShell C-style hooks
             void _ZN15BackgroundShellC1ENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEiiiij() {}
+            void _ZN15BackgroundShell4InitEv() {}
+            void _ZN15BackgroundShell9QueueCharEc() {}
+            void _ZN15BackgroundShell10QueueCharsEPKci() {}
           }
 
           std::string ovms_partition_table_get_type_string(int type) { return "unknown"; }
-
-          namespace BackgroundShell {
-            void Init() {}
-            void QueueChar(char c) {}
-            void QueueChars(const char* s, int len) {}
-          }
           EOF
 
-          # 2. UPDATE CMakeLists.txt CAREFULLY
-          # Instead of replacing, we append the new file to the SRCS list
-          sed -i '/SRCS/ s/")$/ "linker_fix.cpp")/' main/CMakeLists.txt || \
-          sed -i 's/ovms_main.cpp/ovms_main.cpp linker_fix.cpp/g' main/CMakeLists.txt
+          # 2. ROBUST CMAKELISTS.TXT REWRITE
+          # This replaces the brittle sed command with a clean, hardcoded component registration
+          cat <<EOF > main/CMakeLists.txt
+          set(srcs
+              "ovms_main.cpp"
+              "ovms_command.cpp"
+              "ovms_config.cpp"
+              "ovms_events.cpp"
+              "ovms_housekeeping.cpp"
+              "ovms_metrics.cpp"
+              "ovms_module.cpp"
+              "ovms_netmanager.cpp"
+              "ovms_notify.cpp"
+              "ovms_peripherals.cpp"
+              "ovms_script.cpp"
+              "ovms_server.cpp"
+              "ovms_server_v2.cpp"
+              "ovms_server_v3.cpp"
+              "ovms_shell.cpp"
+              "ovms_utils.cpp"
+              "linker_fix.cpp")
+
+          idf_component_register(SRCS \${srcs}
+                                 INCLUDE_DIRS "."
+                                 LDFRAGMENTS "linker.lf")
+          EOF
 
           # 3. Disable problematic components
           sed -i 's/COMPONENT_DIRS :=/COMPONENT_DIRS := components\/console_ssh components\/console_telnet/g' Makefile || true
