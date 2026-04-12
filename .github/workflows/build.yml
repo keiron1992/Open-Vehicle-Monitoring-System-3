@@ -21,18 +21,22 @@ jobs:
           ./install.sh esp32
           echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
-      - name: Pre-build Patch
+      - name: Smart Patching
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Debug: List files to ensure we have the right paths
-          ls main/ovms_netlib.h || echo "ovms_netlib.h not in main"
+          # 1. Patch cellular/PPP headers ONLY if the files exist
+          find . -name "gsmpppos.h" -exec sed -i '1i#include "lwip/netif.h"\n#include "netif/ppp/ppp.h"' {} +
+          find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
           
-          # 2. Fix 'ppp_pcb' and 'netif' errors using the corrected paths
-          # These headers are usually in 'main' or specific component subdirectories
-          sed -i '1i#include "lwip/netif.h"\n#include "netif/ppp/ppp.h"' components/ovms_cellular/src/gsmpppos.h
-          sed -i '1i#include "lwip/netif.h"' components/swcan/src/swcan.h
-          sed -i '1i#include "lwip/ip_addr.h"' main/ovms_netlib.h
+          # 2. Try to find the netlib header even if it's named slightly differently
+          NETLIB=$(find . -name "ovms_netlib.h" | head -n 1)
+          if [ -f "$NETLIB" ]; then
+            sed -i '1i#include "lwip/ip_addr.h"' "$NETLIB"
+            echo "Patched $NETLIB"
+          else
+            echo "ovms_netlib.h not found, skipping specific patch."
+          fi
           
           # 3. Fix the WHOLE_ARCHIVE issue in all CMake files
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
