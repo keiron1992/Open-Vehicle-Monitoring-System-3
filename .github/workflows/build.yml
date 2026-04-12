@@ -25,13 +25,17 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Fix Telnet Console member error
-          # Instead of fighting the declaration, we comment out the problematic lock line.
-          # We also ensure 'console' is correctly aliased to 'MyConsole'.
+          # 1. Fix Telnet Console Header (The 'expected class-name' error)
+          # This injects parent class definitions so 'Telnet' can actually inherit from them.
+          find . -name "console_telnet.h" -exec sed -i '1i#include "ovms_console.h"\n#include "ovms_events.h"' {} +
+          
+          # 2. Fix Telnet Console Source
+          # Comment out the problematic MongooseLock and define the console alias
           find . -name "console_telnet.cpp" -exec sed -i 's/auto mglock = console->MongooseLock();/\/\/ auto mglock = console->MongooseLock();/g' {} +
           find . -name "console_telnet.cpp" -exec sed -i '1i#include "ovms_console.h"\n#define console MyConsole' {} +
           
-          # 2. Setup robust sdkconfig.defaults
+          # 3. Setup robust sdkconfig.defaults
+          # Disabling heavy components (Duktape/SSH) ensures we don't crash the runner
           cat <<EOF >> sdkconfig.defaults
           CONFIG_LWIP_PPP_SUPPORT=y
           CONFIG_LWIP_PPP_PAP_SUPPORT=y
@@ -41,14 +45,12 @@ jobs:
           CONFIG_OVMS_COMP_SSH=n
           EOF
           
-          # 3. Source patches for networking/CAN
+          # 4. Source patches for networking/CAN
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
           find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
           
-          # 4. Global Linker Fixes
+          # 5. Global Linker Fixes & Clean-up
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
-          
-          # 5. Clean manifests
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
