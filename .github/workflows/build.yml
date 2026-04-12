@@ -21,27 +21,21 @@ jobs:
           ./install.sh esp32
           echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
-      - name: Smart Patching
+      - name: Dynamic Pre-build Patch
         run: |
-          cd vehicle/OVMS.V3
+          # We run this from the root to ensure we catch files in /main or /components
           
-          # 1. Patch cellular/PPP headers ONLY if the files exist
+          # 1. Fix PPP/Networking headers globally
+          # This finds any instance of these files and injects the missing includes
           find . -name "gsmpppos.h" -exec sed -i '1i#include "lwip/netif.h"\n#include "netif/ppp/ppp.h"' {} +
           find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
+          find . -name "ovms_netlib.h" -exec sed -i '1i#include "lwip/ip_addr.h"' {} +
           
-          # 2. Try to find the netlib header even if it's named slightly differently
-          NETLIB=$(find . -name "ovms_netlib.h" | head -n 1)
-          if [ -f "$NETLIB" ]; then
-            sed -i '1i#include "lwip/ip_addr.h"' "$NETLIB"
-            echo "Patched $NETLIB"
-          else
-            echo "ovms_netlib.h not found, skipping specific patch."
-          fi
-          
-          # 3. Fix the WHOLE_ARCHIVE issue in all CMake files
+          # 2. Fix the WHOLE_ARCHIVE issue (common in v4.4 linker)
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
-          # 4. Clean up manifest files that trigger version conflicts
+          # 3. Nuke the component manager manifests
+          # This is the most likely cause of 'Exit Code 2' on fresh builds
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -49,6 +43,8 @@ jobs:
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
+          
+          # Clean build to ensure no stale artifacts from previous failed runs
           rm -rf build
           idf.py build
           
