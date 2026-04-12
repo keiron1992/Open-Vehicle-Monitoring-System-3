@@ -25,8 +25,7 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. CREATE DEDICATED LINKER STUBS FILE
-          # This avoids the "ambiguating declaration" error by staying out of ovms_main.cpp
+          # 1. CREATE THE STUB FILE IN THE MAIN DIRECTORY
           cat <<EOF > main/linker_fix.cpp
           #include <string>
           class OvmsWriter;
@@ -38,28 +37,29 @@ jobs:
             void ovms_partition_table_upgrade(OvmsWriter* writer) {}
             int ovms_partition_table_get_type() { return 0; }
             bool module_check_heap_alert(int type, OvmsWriter* writer) { return false; }
+            
+            // BackgroundShell C-style hooks
+            void _ZN15BackgroundShellC1ENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEiiiij() {}
           }
 
           std::string ovms_partition_table_get_type_string(int type) { return "unknown"; }
 
-          // BackgroundShell Stubs to satisfy ovms_command.cpp
           namespace BackgroundShell {
             void Init() {}
             void QueueChar(char c) {}
             void QueueChars(const char* s, int len) {}
           }
-          
-          // BackgroundShell Constructor stub (mangled name for x86/xtensa compatibility)
-          extern "C" void _ZN15BackgroundShellC1ENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEiiiij() {}
           EOF
 
-          # Register the new file in the build system
+          # 2. UPDATE CMakeLists.txt CAREFULLY
+          # Instead of replacing, we append the new file to the SRCS list
+          sed -i '/SRCS/ s/")$/ "linker_fix.cpp")/' main/CMakeLists.txt || \
           sed -i 's/ovms_main.cpp/ovms_main.cpp linker_fix.cpp/g' main/CMakeLists.txt
 
-          # 2. Kill the problematic components
+          # 3. Disable problematic components
           sed -i 's/COMPONENT_DIRS :=/COMPONENT_DIRS := components\/console_ssh components\/console_telnet/g' Makefile || true
           
-          # 3. Setup robust sdkconfig.defaults
+          # 4. Setup robust sdkconfig.defaults
           cat <<EOF >> sdkconfig.defaults
           CONFIG_LWIP_PPP_SUPPORT=y
           CONFIG_LWIP_PPP_PAP_SUPPORT=y
@@ -70,14 +70,9 @@ jobs:
           CONFIG_OVMS_COMP_DUKTAPE=n
           EOF
           
-          # 4. Source patches for networking/CAN
+          # 5. Global Cleanup & Patches
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
-          find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
-          
-          # 5. Global Linker Fixes
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
-          
-          # 6. Clean manifests
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
