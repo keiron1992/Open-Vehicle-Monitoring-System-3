@@ -24,9 +24,14 @@ jobs:
       - name: Pre-build Patch
         run: |
           cd vehicle/OVMS.V3
-          # Fix the WHOLE_ARCHIVE issue in all CMake files
+          
+          # 1. Inject missing network header into swcan.h to fix the 'netif' error
+          sed -i '1i#include "lwip/netif.h"' components/swcan/src/swcan.h
+          
+          # 2. Fix the WHOLE_ARCHIVE issue in all CMake files
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
-          # Clean up manifest files that trigger version conflicts
+          
+          # 3. Clean up manifest files that trigger version conflicts
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
