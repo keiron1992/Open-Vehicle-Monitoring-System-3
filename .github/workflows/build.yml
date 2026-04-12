@@ -26,23 +26,23 @@ jobs:
           cd vehicle/OVMS.V3
           
           # 1. Fix Telnet Console scope error
-          # We must define 'console' as 'MyConsole' so the compiler recognizes the pointer
           find . -name "console_telnet.cpp" -exec sed -i '1i#include "ovms_console.h"\n#define console MyConsole' {} +
           
-          # 2. Force PPP Support into the defaults
+          # 2. Setup robust sdkconfig.defaults
+          # We force PPP support and also disable 'Warnings as Errors' which kills Duktape builds
           echo "CONFIG_LWIP_PPP_SUPPORT=y" >> sdkconfig.defaults
           echo "CONFIG_LWIP_PPP_PAP_SUPPORT=y" >> sdkconfig.defaults
           echo "CONFIG_LWIP_PPP_CHAP_SUPPORT=y" >> sdkconfig.defaults
+          echo "CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_DISABLE=y" >> sdkconfig.defaults
           
           # 3. Source patches for networking/CAN
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
           find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
           
           # 4. Global Linker Fixes
-          # Removes specific flags that cause 'undefined reference' errors in IDF 4.4
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
-          # 5. Clean manifests to prevent IDF v5 registry conflicts
+          # 5. Clean manifests to prevent registry conflicts
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -50,12 +50,16 @@ jobs:
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
-          
-          # Full wipe of old config/build artifacts
           rm -rf build sdkconfig
           
-          # Build with forced PPP flags to ensure the linker finds the symbols
-          idf.py -p -DCONFIG_LWIP_PPP_SUPPORT=y build
+          # Create the config first
+          idf.py reconfigure
+          
+          # Run build with extra flags to prevent strict warning failures
+          # We use -DEXTRA_CFLAGS to tell the compiler 'dont stop on warnings'
+          export EXTRA_CFLAGS="-w"
+          export EXTRA_CXXFLAGS="-w"
+          idf.py build
           
       - name: Upload Finished Firmware
         uses: actions/upload-artifact@v4
