@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.16)
 set(EXTRA_COMPONENT_DIRS "main" "components")
 
 # 2. Exclude nearly everything EXCEPT Maxus T90 and core features
-# This avoids the sprintf error in vweup and save huge amounts of RAM/Flash
+# This avoids the Renault/Niu errors and saves massive amounts of Flash memory
 set(EXCLUDE_COMPONENTS 
     "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
     "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
@@ -15,10 +15,11 @@ set(EXCLUDE_COMPONENTS
     "vehicle_teslamodels" "vehicle_toyotarav4ev" "vehicle_voltampera" "vehicle_vweup"
     "vehicle_vwegolf" "vehicle_track" "vehicle_zeva" "vehicle_hyundai_ioniq5" 
     "vehicle_hyundai_ioniq" "vehicle_mgev_th" "vehicle_volkswagen_tp" "vehicle_fiat500e"
-    "vehicle_renault_obd" "vehicle_vweup_obd"
+    "vehicle_renault_obd" "vehicle_vweup_obd" "vehicle_renaultzoe_ph2" "vehicle_niu_gtevo"
+    "vehicle_obdii" "vehicle_vwegolf" "vehicle_mitsubishi"
 )
 
-# 3. Add a global flag to ignore these specific formatting warnings
+# 3. Suppress non-critical warnings that stop the build
 add_compile_options(
     "-w"
     "-Wno-error=format-overflow"
