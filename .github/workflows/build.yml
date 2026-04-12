@@ -25,15 +25,19 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Fix 'ppp_pcb' and 'netif' errors by injecting headers into the cellular and netlib components
+          # 1. Debug: List files to ensure we have the right paths
+          ls main/ovms_netlib.h || echo "ovms_netlib.h not in main"
+          
+          # 2. Fix 'ppp_pcb' and 'netif' errors using the corrected paths
+          # These headers are usually in 'main' or specific component subdirectories
           sed -i '1i#include "lwip/netif.h"\n#include "netif/ppp/ppp.h"' components/ovms_cellular/src/gsmpppos.h
           sed -i '1i#include "lwip/netif.h"' components/swcan/src/swcan.h
-          sed -i '1i#include "lwip/ip_addr.h"' components/ovms_netlib/src/ovms_netlib.h
+          sed -i '1i#include "lwip/ip_addr.h"' main/ovms_netlib.h
           
-          # 2. Fix the WHOLE_ARCHIVE issue in all CMake files
+          # 3. Fix the WHOLE_ARCHIVE issue in all CMake files
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
-          # 3. Clean up manifest files that trigger version conflicts
+          # 4. Clean up manifest files that trigger version conflicts
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
