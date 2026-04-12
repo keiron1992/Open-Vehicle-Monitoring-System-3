@@ -29,7 +29,6 @@ jobs:
           cat <<EOF > main/linker_fix.cpp
           #include <string>
           class OvmsWriter;
-
           extern "C" {
             bool ovms_partition_table_has_factory() { return false; }
             void* ovms_partition_table_find() { return nullptr; }
@@ -37,49 +36,51 @@ jobs:
             void ovms_partition_table_upgrade(OvmsWriter* writer) {}
             int ovms_partition_table_get_type() { return 0; }
             bool module_check_heap_alert(int type, OvmsWriter* writer) { return false; }
-            
-            // BackgroundShell C-style hooks
             void _ZN15BackgroundShellC1ENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEiiiij() {}
             void _ZN15BackgroundShell4InitEv() {}
             void _ZN15BackgroundShell9QueueCharEc() {}
             void _ZN15BackgroundShell10QueueCharsEPKci() {}
           }
-
           std::string ovms_partition_table_get_type_string(int type) { return "unknown"; }
           EOF
 
-          # 2. ROBUST CMAKELISTS.TXT REWRITE
-          # This replaces the brittle sed command with a clean, hardcoded component registration
-          cat <<EOF > main/CMakeLists.txt
-          set(srcs
-              "ovms_main.cpp"
-              "ovms_command.cpp"
-              "ovms_config.cpp"
-              "ovms_events.cpp"
-              "ovms_housekeeping.cpp"
-              "ovms_metrics.cpp"
-              "ovms_module.cpp"
-              "ovms_netmanager.cpp"
-              "ovms_notify.cpp"
-              "ovms_peripherals.cpp"
-              "ovms_script.cpp"
-              "ovms_server.cpp"
-              "ovms_server_v2.cpp"
-              "ovms_server_v3.cpp"
-              "ovms_shell.cpp"
-              "ovms_utils.cpp"
-              "linker_fix.cpp")
-
-          idf_component_register(SRCS \${srcs}
-                                 INCLUDE_DIRS "."
-                                 LDFRAGMENTS "linker.lf")
+          # 2. OVERWRITE TOP-LEVEL CMakeLists.txt
+          # This ensures ONLY the T90 is built and problematic consoles are excluded
+          cat <<EOF > CMakeLists.txt
+          cmake_minimum_required(VERSION 3.16)
+          set(EXTRA_COMPONENT_DIRS "main" "components")
+          set(EXCLUDE_COMPONENTS 
+              "vehicle_byd_atto3" "vehicle_renaultzoe_ph2" "vehicle_vweup" 
+              "vehicle_vwegolf" "vehicle_niu_gtevo" "vehicle_voltampera"
+              "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
+              "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
+              "vehicle_jaguaripace" "vehicle_kianiroev" "vehicle_kiasoulev" "vehicle_mercedes_b250e"
+              "vehicle_maxus_edeliver3" "vehicle_mgev" "vehicle_trio" "vehicle_nissanleaf"
+              "vehicle_empty" "vehicle_renaulttwizy" "vehicle_renaultzoe" "vehicle_smarted"
+              "vehicle_smarteq" "vehicle_teslamodel3" "vehicle_thinkcity" "vehicle_teslaroadster"
+              "vehicle_teslamodels" "vehicle_toyotarav4ev" "vehicle_track" "vehicle_zeva" 
+              "vehicle_hyundai_ioniq5" "vehicle_hyundai_ioniq" "vehicle_mgev_th" 
+              "vehicle_volkswagen_tp" "vehicle_fiat500e" "vehicle_renault_obd" 
+              "vehicle_vweup_obd" "vehicle_mitsubishi"
+              "console_ssh" "console_telnet")
+          add_compile_options("-w" "-Wno-error=format-overflow" "-Wno-error=format-truncation" "-Wno-maybe-uninitialized")
+          include(\$ENV{IDF_PATH}/tools/cmake/project.cmake)
+          project(ovms3)
           EOF
 
-          # 3. Disable problematic components
-          sed -i 's/COMPONENT_DIRS :=/COMPONENT_DIRS := components\/console_ssh components\/console_telnet/g' Makefile || true
-          
-          # 4. Setup robust sdkconfig.defaults
-          cat <<EOF >> sdkconfig.defaults
+          # 3. REWRITE MAIN CMakeLists.txt (Including our linker fix)
+          cat <<EOF > main/CMakeLists.txt
+          set(srcs
+              "ovms_main.cpp" "ovms_command.cpp" "ovms_config.cpp" "ovms_events.cpp"
+              "ovms_housekeeping.cpp" "ovms_metrics.cpp" "ovms_module.cpp"
+              "ovms_netmanager.cpp" "ovms_notify.cpp" "ovms_peripherals.cpp"
+              "ovms_script.cpp" "ovms_server.cpp" "ovms_server_v2.cpp"
+              "ovms_server_v3.cpp" "ovms_shell.cpp" "ovms_utils.cpp" "linker_fix.cpp")
+          idf_component_register(SRCS \${srcs} INCLUDE_DIRS "." LDFRAGMENTS "linker.lf")
+          EOF
+
+          # 4. Setup sdkconfig.defaults
+          cat <<EOF > sdkconfig.defaults
           CONFIG_LWIP_PPP_SUPPORT=y
           CONFIG_LWIP_PPP_PAP_SUPPORT=y
           CONFIG_LWIP_PPP_CHAP_SUPPORT=y
@@ -88,10 +89,10 @@ jobs:
           CONFIG_OVMS_COMP_SSH=n
           CONFIG_OVMS_COMP_DUKTAPE=n
           EOF
-          
-          # 5. Global Cleanup & Patches
+
+          # 5. Final Source Patches
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
-          find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
+          find . -name "CMakeLists.txt" -not -path "./CMakeLists.txt" -not -path "./main/CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -100,13 +101,11 @@ jobs:
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
           rm -rf build sdkconfig
-          
           export EXTRA_CFLAGS="-w"
           export EXTRA_CXXFLAGS="-w"
-          
           idf.py reconfigure
           idf.py build
-          
+
       - name: Upload Finished Firmware
         uses: actions/upload-artifact@v4
         with:
