@@ -3,7 +3,6 @@ on: [push, workflow_dispatch]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # Force-disables the component manager to stop the idf >= 5.0.0 error
   IDF_COMPONENT_MANAGER: "0"
 
 jobs:
@@ -25,24 +24,17 @@ jobs:
       - name: Pre-build Patch
         run: |
           cd vehicle/OVMS.V3
-          
-          # 1. Strip 'WHOLE_ARCHIVE' from all config files (v4.4 incompatibility)
+          # Fix the WHOLE_ARCHIVE issue in all CMake files
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
-          
-          # 2. Delete the files that trigger the automatic version solver
+          # Clean up manifest files that trigger version conflicts
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
-          rm -rf managed_components
 
       - name: Build Maxus T90 Firmware
         run: |
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
-          
-          # Ensure a clean build environment
           rm -rf build
-          
-          # Start the build
           idf.py build
           
       - name: Upload Finished Firmware
