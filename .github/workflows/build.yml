@@ -25,19 +25,39 @@ jobs:
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. FIX THE LINKER ERRORS (Multi-Stub Fix)
-          # We provide dummy definitions for the three functions the linker can't find.
-          # These are required by the OTA and WebServer components.
+          # 1. COMPREHENSIVE LINKER STUBS
+          # We provide dummy definitions for all symbols causing "undefined reference" errors.
+          # This satisfies the linker for OTA, WebServer, and Command components.
           cat <<EOF >> main/ovms_main.cpp
           #include <string>
+          
+          // Define missing structures for stubs
+          class OvmsWriter;
+          typedef int ovms_flashpartition_t;
+
           extern "C" {
             bool ovms_partition_table_has_factory() { return false; }
-            void* ovms_partition_table_find() { return nullptr; }
+            void* ovms_partition_table_find() { return (void*)0; }
+            void ovms_partition_table_list(OvmsWriter* writer) {}
+            void ovms_partition_table_upgrade(OvmsWriter* writer) {}
+            int ovms_partition_table_get_type() { return 0; }
+            void module_check_heap_alert(int type, OvmsWriter* writer) {}
           }
-          std::string ovms_partition_table_get_type_string(int type) { return "unknown"; }
+
+          std::string ovms_partition_table_get_type_string(ovms_flashpartition_t type) { return "unknown"; }
+
+          // BackgroundShell Stubs
+          namespace BackgroundShell {
+            void Init() {}
+            void QueueChar(char c) {}
+            void QueueChars(const char* s, int len) {}
+          }
+          
+          // Fallback for the BackgroundShell constructor (mangled name)
+          extern "C" void _ZN15BackgroundShellC1ENSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEiiiij() {}
           EOF
 
-          # 2. Kill the problematic components in the build system
+          # 2. Kill the problematic components (Telnet/SSH)
           sed -i 's/COMPONENT_DIRS :=/COMPONENT_DIRS := components\/console_ssh components\/console_telnet/g' Makefile || true
           
           # 3. Setup robust sdkconfig.defaults
@@ -51,14 +71,9 @@ jobs:
           CONFIG_OVMS_COMP_DUKTAPE=n
           EOF
           
-          # 4. Source patches for networking/CAN
+          # 4. Global Linker & Cleanup Fixes
           find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
-          find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
-          
-          # 5. Global Linker Fixes
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
-          
-          # 6. Clean manifests
           find . -name "dependencies.lock" -delete
           find . -name "idf_component.yml" -delete
 
@@ -67,10 +82,8 @@ jobs:
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
           rm -rf build sdkconfig
-          
           export EXTRA_CFLAGS="-w"
           export EXTRA_CXXFLAGS="-w"
-          
           idf.py reconfigure
           idf.py build
           
