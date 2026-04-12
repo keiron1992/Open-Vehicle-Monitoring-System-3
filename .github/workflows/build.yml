@@ -1,31 +1,52 @@
-cmake_minimum_required(VERSION 3.16)
+name: Maxus-T90-Build
+on: [push, workflow_dispatch]
 
-# 1. Register directories
-set(EXTRA_COMPONENT_DIRS "main" "components")
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Force-disables the component manager to stop the idf >= 5.0.0 error
+  IDF_COMPONENT_MANAGER: "0"
 
-# 2. Exclude only the cars causing build errors or bloat.
-# CRITICAL: We REMOVED "vehicle_obdii" from this list because Maxus T90 needs it!
-set(EXCLUDE_COMPONENTS 
-    "vehicle_bmwi3" "vehicle_cadillac_cts" "vehicle_corvette" "vehicle_boltev" 
-    "vehicle_dbc" "vehicle_demo" "vehicle_fiat500" "vehicle_hyundai_ioniqvfl"
-    "vehicle_jaguaripace" "vehicle_kianiroev" "vehicle_kiasoulev" "vehicle_mercedes_b250e"
-    "vehicle_maxus_edeliver3" "vehicle_mgev" "vehicle_trio" "vehicle_nissanleaf"
-    "vehicle_empty" "vehicle_renaulttwizy" "vehicle_renaultzoe" "vehicle_smarted"
-    "vehicle_smarteq" "vehicle_teslamodel3" "vehicle_thinkcity" "vehicle_teslaroadster"
-    "vehicle_teslamodels" "vehicle_toyotarav4ev" "vehicle_voltampera" "vehicle_vweup"
-    "vehicle_vwegolf" "vehicle_track" "vehicle_zeva" "vehicle_hyundai_ioniq5" 
-    "vehicle_hyundai_ioniq" "vehicle_mgev_th" "vehicle_volkswagen_tp" "vehicle_fiat500e"
-    "vehicle_renault_obd" "vehicle_vweup_obd" "vehicle_renaultzoe_ph2" "vehicle_niu_gtevo"
-    "vehicle_mitsubishi"
-)
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
 
-# 3. Suppress non-critical warnings
-add_compile_options(
-    "-w"
-    "-Wno-error=format-overflow"
-    "-Wno-error=format-truncation"
-    "-Wno-maybe-uninitialized"
-)
+      - name: Setup ESP-IDF
+        run: |
+          git clone --recursive --depth 1 --branch v4.4.6 https://github.com/espressif/esp-idf.git
+          cd esp-idf
+          ./install.sh esp32
+          echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-project(ovms3)
+      - name: Pre-build Patch
+        run: |
+          cd vehicle/OVMS.V3
+          
+          # 1. Strip 'WHOLE_ARCHIVE' from all config files (v4.4 incompatibility)
+          find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
+          
+          # 2. Delete the files that trigger the automatic version solver
+          find . -name "dependencies.lock" -delete
+          find . -name "idf_component.yml" -delete
+          rm -rf managed_components
+
+      - name: Build Maxus T90 Firmware
+        run: |
+          . $GITHUB_WORKSPACE/esp-idf/export.sh
+          cd vehicle/OVMS.V3
+          
+          # Ensure a clean build environment
+          rm -rf build
+          
+          # Start the build
+          idf.py build
+          
+      - name: Upload Finished Firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Maxus-T90-Firmware
+          path: vehicle/OVMS.V3/build/ovms3.bin
