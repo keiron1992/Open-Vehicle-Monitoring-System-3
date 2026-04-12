@@ -21,18 +21,22 @@ jobs:
           ./install.sh esp32
           echo "IDF_PATH=$GITHUB_WORKSPACE/esp-idf" >> $GITHUB_ENV
 
-      - name: Targeted Source Patching
+      - name: Deep Patching & Configuration
         run: |
           cd vehicle/OVMS.V3
           
-          # 1. Fix the 'ppp_pcb' error in gsmpppos.h
-          # We search for the file and inject the required LwIP headers at the very top
-          find . -name "gsmpppos.h" -exec sed -i '1i#include "lwip/opt.h"\n#include "lwip/err.h"\n#include "lwip/arch.h"\n#include "netif/ppp/ppp.h"' {} +
+          # 1. Force PPP Support into the sdkconfig
+          # This ensures the IDF actually compiles the PPP library into the build
+          echo "CONFIG_LWIP_PPP_SUPPORT=y" >> sdkconfig.defaults
+          echo "CONFIG_LWIP_PPP_PAP_SUPPORT=y" >> sdkconfig.defaults
+          echo "CONFIG_LWIP_PPP_CHAP_SUPPORT=y" >> sdkconfig.defaults
           
-          # 2. Fix potential 'netif' errors in swcan
+          # 2. Hard-inject includes into the source
+          # We use 'find' to be directory-agnostic
+          find . -name "gsmpppos.h" -exec sed -i '1i#define PPP_SUPPORT 1\n#include "lwip/opt.h"\n#include "netif/ppp/ppp.h"' {} +
           find . -name "swcan.h" -exec sed -i '1i#include "lwip/netif.h"' {} +
           
-          # 3. Fix the WHOLE_ARCHIVE linker issue
+          # 3. Fix the WHOLE_ARCHIVE linker issue (common in v4.4.x)
           find . -name "CMakeLists.txt" -exec sed -i 's/WHOLE_ARCHIVE//g' {} +
           
           # 4. Remove version-conflicting manifests
@@ -44,10 +48,11 @@ jobs:
           . $GITHUB_WORKSPACE/esp-idf/export.sh
           cd vehicle/OVMS.V3
           
-          # Force a clean build state
-          rm -rf build
-          # Build only the components we need to speed things up and avoid unrelated errors
-          idf.py build
+          # Ensure a clean slate for the new config
+          rm -rf build sdkconfig
+          
+          # Build with forced PPP flags to ensure the linker finds the symbols
+          idf.py -DCONFIG_LWIP_PPP_SUPPORT=y build
           
       - name: Upload Finished Firmware
         uses: actions/upload-artifact@v4
